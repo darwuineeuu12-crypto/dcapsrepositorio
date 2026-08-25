@@ -1186,6 +1186,8 @@
     if(e.target.id === 'cartOverlay') document.getElementById('cartOverlay').classList.remove('open');
   });
 
+
+
   document.getElementById('checkoutBtn').addEventListener('click', async function(){
     var ids = Object.keys(cart).filter(function(id){ return cart[id] > 0; });
     if(ids.length === 0) return;
@@ -1235,7 +1237,9 @@
     lines.push('💰 *TOTAL: $' + finalTotal.toFixed(2).replace(/\.00$/, '') + '*');
     lines.push('');
     lines.push('🔗 Ver mi pedido: ' + orderLink);
-    var msg = encodeURIComponent(lines.join('\n'));
+    var messageText = lines.join('\n');
+    // Usar encodeURIComponent directamente - WhatsApp maneja bien los emojis UTF-8
+    var msg = encodeURIComponent(messageText);
     var url = WHATSAPP_NUMBER ? ('https://wa.me/' + WHATSAPP_NUMBER + '?text=' + msg) : ('https://wa.me/?text=' + msg);
     window.open(url, '_blank');
   });
