@@ -1195,7 +1195,7 @@
     ids.forEach(function(id){
       var p = findProduct(id);
       if(!p) return;
-      items.push({name: p.name, qty: cart[id], price: Number(String(p.price).replace(',', '.')) || 0, img: p.img || '', meta: p.meta || ''});
+      items.push({id: p.id, name: p.name, qty: cart[id], price: Number(String(p.price).replace(',', '.')) || 0});
     });
     
     // Calcular totales con descuento si aplica
@@ -1210,8 +1210,9 @@
     }
     
     // Codificar datos del pedido en la URL de forma compacta (claves cortas, items como arrays)
+    // Solo guardamos ID, nombre, cantidad y precio para mantener la URL corta
     var orderData = {
-      i: items.map(function(it){ return [it.name, it.qty, it.price, it.img, it.meta]; }),
+      i: items.map(function(it){ return [it.id, it.name, it.qty, it.price]; }),
       t: finalTotal,
       r: regularTotal,
       d: discount,
@@ -1258,6 +1259,26 @@
     this.textContent = soundOn ? '🔊' : '🔇';
   });
 
+  function escapeHtml(text){
+    if(!text) return '';
+    var map = {
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#039;'
+    };
+    return text.replace(/[&<>"']/g, function(m){ return map[m]; });
+  }
+
+  function findProductFromStorage(allProducts, productId){
+    for(var cat in allProducts){
+      var found = allProducts[cat].find(function(x){ return x.id === productId; });
+      if(found) return found;
+    }
+    return null;
+  }
+
   function showOrderView(encodedData){
     var order = null;
     try{
@@ -1266,9 +1287,9 @@
       var decodedData = decodeURIComponent(escape(atob(b64)));
       var raw = JSON.parse(decodedData);
       if(raw && raw.i){
-        // Formato compacto nuevo
+        // Formato compacto nuevo - solo guarda ID, nombre, qty, precio
         order = {
-          items: raw.i.map(function(arr){ return {name: arr[0], qty: arr[1], price: arr[2], img: arr[3] || '', meta: arr[4] || ''}; }),
+          items: raw.i.map(function(arr){ return {id: arr[0], name: arr[1], qty: arr[2], price: arr[3]}; }),
           total: Number(raw.t).toFixed(2),
           regularTotal: Number(raw.r).toFixed(2),
           discount: Number(raw.d).toFixed(2),
@@ -1281,6 +1302,18 @@
     }catch(e){
       order = null;
     }
+    
+    // Cargar productos del storage para obtener imágenes
+    window.storage.get('dcaps-products', false).then(function(result){
+      var storedProducts = result ? JSON.parse(result.value) : {};
+      renderOrderView(order, storedProducts);
+    }).catch(function(){
+      // Si no hay storage, renderizar sin imágenes
+      renderOrderView(order, {});
+    });
+  }
+
+  function renderOrderView(order, allProducts){
     var html = '';
     if(!order){
       html = '<div style="text-align:center;color:var(--text-mut);padding:60px 20px;font-family:Inter,sans-serif;">❌ Pedido no encontrado o enlace inválido.</div>';
@@ -1294,12 +1327,17 @@
       if(order.items && order.items.length > 0){
         order.items.forEach(function(it){
           var lineTotal = (Number(it.price) * it.qty).toFixed(2).replace(/\.00$/, '');
+          // Buscar el producto en el catálogo para obtener imagen y meta
+          var productData = findProductFromStorage(allProducts, it.id);
+          var imgSrc = productData ? (productData.img || '') : '';
+          var meta = productData ? (productData.meta || '') : '';
+          
           html += '<div style="display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);">';
           
           // Imagen del producto
           html += '<div style="flex-shrink:0;width:70px;height:70px;border-radius:10px;background:#241010;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;">';
-          if(it.img){
-            html += '<img src="' + it.img + '" alt="' + it.name + '" style="width:100%;height:100%;object-fit:cover;">';
+          if(imgSrc && imgSrc.trim() !== ''){
+            html += '<img src="' + escapeHtml(imgSrc) + '" alt="' + escapeHtml(it.name) + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML=\'<span style=&quot;font-size:32px;&quot;>🧢</span>\'" loading="lazy">';
           } else {
             html += '<span style="font-size:32px;">🧢</span>';
           }
@@ -1308,9 +1346,9 @@
           // Información del producto
           html += '<div style="flex:1;display:flex;flex-direction:column;justify-content:space-between;min-width:0;">';
           html += '<div>';
-          html += '<div style="font-weight:700;font-size:14px;color:var(--text);text-transform:uppercase;letter-spacing:0.5px;">' + it.name + '</div>';
-          if(it.meta){
-            html += '<div style="font-size:12px;color:var(--text-mut);margin-top:2px;">' + it.meta + '</div>';
+          html += '<div style="font-weight:700;font-size:14px;color:var(--text);text-transform:uppercase;letter-spacing:0.5px;">' + escapeHtml(it.name) + '</div>';
+          if(meta){
+            html += '<div style="font-size:12px;color:var(--text-mut);margin-top:2px;">' + escapeHtml(meta) + '</div>';
           }
           html += '</div>';
           html += '<div style="display:flex;justify-content:space-between;align-items:center;margin-top:6px;">';
