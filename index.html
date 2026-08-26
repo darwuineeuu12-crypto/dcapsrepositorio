@@ -1193,7 +1193,7 @@
     ids.forEach(function(id){
       var p = findProduct(id);
       if(!p) return;
-      items.push({name: p.name, qty: cart[id], price: Number(String(p.price).replace(',', '.')) || 0});
+      items.push({id: p.id, name: p.name, qty: cart[id], price: Number(String(p.price).replace(',', '.')) || 0});
     });
     
     // Calcular totales con descuento si aplica
@@ -1209,7 +1209,7 @@
     
     // Codificar datos del pedido en la URL de forma compacta (claves cortas, items como arrays)
     var orderData = {
-      i: items.map(function(it){ return [it.name, it.qty, it.price]; }),
+      i: items.map(function(it){ return [it.id, it.name, it.qty, it.price]; }),
       t: finalTotal,
       r: regularTotal,
       d: discount,
@@ -1254,7 +1254,24 @@
     this.textContent = soundOn ? '🔊' : '🔇';
   });
 
-  function showOrderView(encodedData){
+  function escapeHtml(text){
+    if(!text) return '';
+    var map = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' };
+    return String(text).replace(/[&<>"']/g, function(m){ return map[m]; });
+  }
+
+  function findProductInCatalog(allProducts, productId){
+    if(!allProducts) return null;
+    for(var cat in allProducts){
+      var list = allProducts[cat] || [];
+      for(var i = 0; i < list.length; i++){
+        if(list[i].id === productId) return list[i];
+      }
+    }
+    return null;
+  }
+
+  async function showOrderView(encodedData){
     var order = null;
     try{
       var b64 = encodedData.replace(/-/g, '+').replace(/_/g, '/');
@@ -1262,9 +1279,16 @@
       var decodedData = decodeURIComponent(escape(atob(b64)));
       var raw = JSON.parse(decodedData);
       if(raw && raw.i){
-        // Formato compacto nuevo
+        // Formato compacto nuevo (incluye id de producto)
         order = {
-          items: raw.i.map(function(arr){ return {name: arr[0], qty: arr[1], price: arr[2]}; }),
+          items: raw.i.map(function(arr){
+            // Compatibilidad: enlaces viejos guardaban [name, qty, price] (3 elementos)
+            // Enlaces nuevos guardan [id, name, qty, price] (4 elementos)
+            if(arr.length === 4){
+              return {id: arr[0], name: arr[1], qty: arr[2], price: arr[3]};
+            }
+            return {id: null, name: arr[0], qty: arr[1], price: arr[2]};
+          }),
           total: Number(raw.t).toFixed(2),
           regularTotal: Number(raw.r).toFixed(2),
           discount: Number(raw.d).toFixed(2),
@@ -1277,6 +1301,17 @@
     }catch(e){
       order = null;
     }
+
+    // Cargar catálogo real desde la API para obtener imágenes actuales
+    var allProducts = {};
+    try{
+      var res = await fetch('/api/products');
+      var data = await res.json();
+      allProducts = data.value ? JSON.parse(data.value) : {};
+    }catch(e){
+      allProducts = {};
+    }
+
     var html = '';
     if(!order){
       html = '<div style="text-align:center;color:var(--text-mut);padding:60px 20px;font-family:Inter,sans-serif;">❌ Pedido no encontrado o enlace inválido.</div>';
@@ -1286,36 +1321,61 @@
         + '<div style="color:var(--gold);font-size:12px;letter-spacing:2px;text-transform:uppercase;margin-top:4px;">📋 Resumen del pedido</div>'
         + '</div>';
       html += '<div style="max-width:420px;margin:0 auto;background:var(--card);border:1px solid var(--border);border-radius:14px;padding:18px;font-family:Inter,sans-serif;color:var(--text);">';
-      
+
       if(order.items && order.items.length > 0){
         order.items.forEach(function(it){
           var lineTotal = (Number(it.price) * it.qty).toFixed(2).replace(/\.00$/, '');
-          html += '<div style="display:flex;justify-content:space-between;padding:9px 0;border-bottom:1px solid var(--border);font-size:14px;">'
-            + '<span>🧢 ' + it.name + ' x' + it.qty + '</span>'
-            + '<span>$' + lineTotal + '</span></div>';
+          var productData = it.id ? findProductInCatalog(allProducts, it.id) : null;
+          var imgSrc = productData ? (productData.img || '') : '';
+          var meta = productData ? (productData.meta || '') : '';
+
+          html += '<div style="display:flex;gap:12px;padding:14px 0;border-bottom:1px solid var(--border);">';
+
+          html += '<div style="flex-shrink:0;width:64px;height:64px;border-radius:10px;background:#241010;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;overflow:hidden;">';
+          if(imgSrc && imgSrc.trim() !== ''){
+            html += '<img src="' + escapeHtml(imgSrc) + '" alt="' + escapeHtml(it.name) + '" style="width:100%;height:100%;object-fit:cover;" onerror="this.parentElement.innerHTML=\'<span style=&quot;font-size:28px;&quot;>🧢</span>\'" loading="lazy">';
+          } else {
+            html += '<span style="font-size:28px;">🧢</span>';
+          }
+          html += '</div>';
+
+          html += '<div style="flex:1;display:flex;flex-direction:column;justify-content:center;min-width:0;">';
+          html += '<div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;">';
+          html += '<div style="min-width:0;">';
+          html += '<div style="font-weight:700;font-size:14px;color:var(--text);text-transform:uppercase;letter-spacing:0.3px;">' + escapeHtml(it.name) + '</div>';
+          if(meta){
+            html += '<div style="font-size:12px;color:var(--text-mut);margin-top:2px;">' + escapeHtml(meta) + '</div>';
+          }
+          html += '<div style="font-size:12px;color:var(--text-mut);margin-top:4px;">x' + it.qty + ' • $' + it.price + ' c/u</div>';
+          html += '</div>';
+          html += '<span style="font-weight:700;color:var(--gold);white-space:nowrap;">$' + lineTotal + '</span>';
+          html += '</div>';
+          html += '</div>';
+
+          html += '</div>';
         });
       }
-      
+
       html += '<div style="padding-top:14px;border-top:1px solid var(--border);">';
-      
+
       if(order.regularTotal && order.regularTotal !== order.total){
         html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;color:var(--text-mut);">'
           + '<span>Subtotal</span><span>$' + order.regularTotal + '</span></div>';
       }
-      
+
       if(order.discount && Number(order.discount) > 0){
         html += '<div style="display:flex;justify-content:space-between;padding:8px 0;font-size:14px;color:#25d366;font-weight:600;">'
           + '<span>🎉 Descuento</span><span>-$' + order.discount + '</span></div>';
       }
-      
+
       html += '<div style="display:flex;justify-content:space-between;padding-top:10px;font-weight:800;font-size:17px;border-top:1px solid var(--border);">'
         + '<span>💰 Total</span><span style="color:var(--gold);">$' + order.total + '</span></div>';
-      
+
       if(order.timestamp){
         html += '<div style="text-align:center;font-size:11px;color:var(--text-mut);padding-top:12px;margin-top:12px;border-top:1px solid var(--border);">'
           + 'Pedido: ' + order.timestamp + '</div>';
       }
-      
+
       html += '</div>';
     }
     document.body.innerHTML = html;
