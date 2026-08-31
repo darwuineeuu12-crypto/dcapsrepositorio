@@ -277,7 +277,7 @@
   .add-btn:hover{background:#e0264a;}
   .grid{
     display:grid;
-    grid-template-columns:repeat(auto-fit, minmax(230px, 1fr));
+    grid-template-columns: repeat(2, 1fr);
     gap:18px;
     padding:20px;
     max-width:1000px;
@@ -752,6 +752,67 @@
     cursor:pointer;
     float:right;
   }
+  
+  /* Responsive - 1 columna en móviles */
+  @media (max-width: 640px) {
+    .grid {
+      grid-template-columns: repeat(1, 1fr);
+    }
+  }
+  
+  /* 2 columnas en tablets y desktop */
+  @media (min-width: 641px) {
+    .grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+  
+  /* Modal de imagen ampliada */
+  .image-modal-overlay{
+    display:none;
+    position:fixed;
+    inset:0;
+    background:rgba(0,0,0,0.9);
+    z-index:200;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+  }
+  .image-modal-overlay.open{display:flex;}
+  .image-modal-content{
+    position:relative;
+    max-width:90vw;
+    max-height:90vh;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+  }
+  .image-modal-content img{
+    max-width:100%;
+    max-height:90vh;
+    object-fit:contain;
+    border-radius:12px;
+    animation:fadeSlideUp 0.3s ease;
+  }
+  .image-modal-close{
+    position:absolute;
+    top:20px;
+    right:20px;
+    background:#c81e3a;
+    border:none;
+    color:#fff;
+    width:44px;
+    height:44px;
+    border-radius:50%;
+    font-size:24px;
+    cursor:pointer;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    z-index:201;
+    transition:background 0.2s ease;
+  }
+  .image-modal-close:hover{background:#e0264a;}
 </style>
 </head>
 <body>
@@ -857,6 +918,14 @@
     <div style="text-align:center; color:var(--text-mut); font-size:12px; margin-top:12px;">
       Toca el botón y solo dale enviar en WhatsApp — tu pedido ya va listo.
     </div>
+  </div>
+</div>
+
+<!-- Modal para ampliar imagen del producto -->
+<div class="image-modal-overlay" id="imageModalOverlay">
+  <div class="image-modal-content">
+    <button class="image-modal-close" id="imageModalClose">✕</button>
+    <img id="imageModalImg" src="" alt="Imagen ampliada">
   </div>
 </div>
 
@@ -1463,6 +1532,12 @@
         var img = document.createElement('img');
         img.src = p.img;
         img.alt = p.name;
+        img.style.cursor = 'pointer';
+        img.addEventListener('click', function(){
+          imageModalImg.src = p.img;
+          imageModalImg.alt = p.name;
+          imageModalOverlay.classList.add('open');
+        });
         imgWrap.appendChild(img);
       } else {
         var noImg = document.createElement('div');
@@ -1562,6 +1637,11 @@
 
   var fImgFile = document.getElementById('fImgFile');
   var fImgPreview = document.getElementById('fImgPreview');
+  
+  // Referencias para el modal de imagen ampliada
+  var imageModalOverlay = document.getElementById('imageModalOverlay');
+  var imageModalImg = document.getElementById('imageModalImg');
+  var imageModalClose = document.getElementById('imageModalClose');
 
   function resizeImage(file, maxDim, quality){
     return new Promise(function(resolve, reject){
@@ -1706,6 +1786,14 @@
   document.getElementById('cancelBtn').addEventListener('click', closeModal);
   modalOverlay.addEventListener('click', function(e){
     if(e.target === modalOverlay) closeModal();
+  });
+  
+  // Event listeners para el modal de imagen ampliada
+  imageModalClose.addEventListener('click', function(){
+    imageModalOverlay.classList.remove('open');
+  });
+  imageModalOverlay.addEventListener('click', function(e){
+    if(e.target === imageModalOverlay) imageModalOverlay.classList.remove('open');
   });
 
   fName.addEventListener('input', function(){ errName.style.display = 'none'; });
