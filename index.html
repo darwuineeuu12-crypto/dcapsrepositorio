@@ -459,6 +459,11 @@
     font-size:13px;
     letter-spacing:1px;
     text-transform:uppercase;
+    pointer-events:none;
+    z-index:1;
+  }
+  .edit-tag{
+    z-index:2;
   }
   .product-card.unavailable .order-btn{
     opacity:0.4;
@@ -1426,15 +1431,29 @@
     }
   }
 
+  // Variables para paginación/carga progresiva - SIN LÍMITE DE FOTOS
+  var itemsPerBatch = 10000;
+  var currentBatch = 0;
+  
   function render(){
     var catProducts = products[currentCategory] || [];
-    itemCount.textContent = catProducts.length;
+    // Mostrar cantidad sin límite
+    itemCount.textContent = catProducts.length + (catProducts.length > 100 ? ' productos' : '');
     if(catProducts.length === 0){
       grid.innerHTML = '<div class="empty-state">Aún no hay productos en esta categoría. Añade el primero con el botón de arriba.</div>';
       return;
     }
     grid.innerHTML = '';
-    catProducts.forEach(function(p){
+    currentBatch = 0;
+    renderBatch(catProducts);
+  }
+
+  function renderBatch(catProducts){
+    var start = currentBatch * itemsPerBatch;
+    var end = start + itemsPerBatch;
+    var batch = catProducts.slice(start, end);
+    
+    batch.forEach(function(p){
       var card = document.createElement('div');
       card.className = 'product-card' + (p.available === false ? ' unavailable' : '');
 
@@ -1520,6 +1539,25 @@
       card.appendChild(info);
       grid.appendChild(card);
     });
+    
+    // Si hay más productos, cargar más al hacer scroll
+    currentBatch++;
+    if(end < catProducts.length){
+      setupInfiniteScroll(catProducts);
+    }
+  }
+
+  function setupInfiniteScroll(catProducts){
+    var scrollHandler = function(){
+      var scrollPos = window.innerHeight + window.scrollY;
+      var threshold = document.body.offsetHeight - 500;
+      if(scrollPos >= threshold && currentBatch * itemsPerBatch < catProducts.length){
+        window.removeEventListener('scroll', scrollHandler);
+        renderBatch(catProducts);
+        setupInfiniteScroll(catProducts);
+      }
+    };
+    window.addEventListener('scroll', scrollHandler);
   }
 
   var fImgFile = document.getElementById('fImgFile');
@@ -1527,24 +1565,58 @@
 
   function resizeImage(file, maxDim, quality){
     return new Promise(function(resolve, reject){
+      // Validar que el archivo sea una imagen
+      if(!file.type.startsWith('image/')){
+        reject(new Error('El archivo debe ser una imagen'));
+        return;
+      }
+      // Sin límite de tamaño de archivo (máximo 5GB)
+      if(file.size > 5 * 1024 * 1024 * 1024){
+        reject(new Error('La imagen no debe superar 5GB'));
+        return;
+      }
+      
       var reader = new FileReader();
       reader.onload = function(e){
         var img = new Image();
         img.onload = function(){
           var w = img.width, h = img.height;
-          if(w > maxDim || h > maxDim){
-            if(w > h){ h = Math.round(h * maxDim / w); w = maxDim; }
-            else { w = Math.round(w * maxDim / h); h = maxDim; }
+          // Redimensión inteligente basada en tamaño original
+          var maxDimension = maxDim;
+          if(file.size > 10 * 1024 * 1024){
+            // Para archivos > 10MB, reducir a 800px
+            maxDimension = 800;
+          } else if(file.size > 5 * 1024 * 1024){
+            // Para archivos > 5MB, reducir a 900px
+            maxDimension = 900;
+          }
+          
+          if(w > maxDimension || h > maxDimension){
+            if(w > h){ h = Math.round(h * maxDimension / w); w = maxDimension; }
+            else { w = Math.round(w * maxDimension / h); h = maxDimension; }
           }
           var canvas = document.createElement('canvas');
           canvas.width = w; canvas.height = h;
           canvas.getContext('2d').drawImage(img, 0, 0, w, h);
-          resolve(canvas.toDataURL('image/jpeg', quality));
+          
+          // Compresión adaptativa según tamaño
+          var finalQuality = quality;
+          if(file.size > 20 * 1024 * 1024){
+            finalQuality = 0.50; // Archivos > 20MB: compresión máxima
+          } else if(file.size > 10 * 1024 * 1024){
+            finalQuality = 0.55; // Archivos > 10MB: compresión muy alta
+          } else if(file.size > 5 * 1024 * 1024){
+            finalQuality = 0.60; // Archivos > 5MB: compresión alta
+          } else if(file.size > 2 * 1024 * 1024){
+            finalQuality = 0.65; // Archivos > 2MB: compresión media
+          }
+          
+          resolve(canvas.toDataURL('image/jpeg', finalQuality));
         };
-        img.onerror = reject;
+        img.onerror = function(){ reject(new Error('No se pudo cargar la imagen')); };
         img.src = e.target.result;
       };
-      reader.onerror = reject;
+      reader.onerror = function(){ reject(new Error('Error leyendo el archivo')); };
       reader.readAsDataURL(file);
     });
   }
@@ -1582,7 +1654,11 @@
       if(saveBtnEl){ saveBtnEl.textContent = originalText; saveBtnEl.disabled = false; }
     }catch(e){
       console.error('Error subiendo imagen', e);
-      alert('No se pudo subir la foto. Intenta de nuevo.');
+      var errorMsg = 'No se pudo subir la foto. ';
+      if(e.message.includes('5GB')) errorMsg += 'La imagen es muy grande (máx 5GB).';
+      else if(e.message.includes('imagen')) errorMsg += 'El archivo debe ser una imagen válida.';
+      else errorMsg += 'Intenta de nuevo.';
+      alert(errorMsg);
     }
   });
 
